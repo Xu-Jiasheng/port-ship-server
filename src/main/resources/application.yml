@@ -1,0 +1,91 @@
+
+
+server:
+  port: 8082
+
+spring:
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://localhost:3306/portalship_db?useUnicode=true&characterEncoding=utf-8&useSSL=false
+    username: root
+    password: 123456
+    type: com.alibaba.druid.pool.DruidDataSource
+
+  data:
+    redis:
+      database: 2
+      host: 127.0.0.1
+      port: 6379
+      password:
+
+  servlet:
+    multipart:
+      max-file-size: 100MB
+      max-request-size: 100MB
+
+  cache:
+    redis:
+      time-to-live: 600000
+
+  mail:
+    host: smtp.qq.com
+    username: your_email@qq.com
+    password: your_smtp_authorization_code
+    protocol: smtp
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+            required: true
+          ssl:
+            enable: true
+          socketFactory:
+            port: 465
+            class: javax.net.ssl.SSLSocketFactory
+          connectiontimeout: 5000
+          timeout: 3000
+          writetimeout: 5000
+
+mybatis-plus:
+  type-aliases-package: cn.edu.seig.portalship.model.entity
+  configuration:
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+    map-underscore-to-camel-case: true
+  global-config:
+    db-config:
+      table-prefix: tb_
+
+role-path-permissions:
+  permissions:
+    ROLE_ADMIN:
+      - "/admin/"
+      - "/ship/"
+      - "/ship-user/"
+      - "/operation/"
+      - "/file/"
+      - "/statistics/"
+      - "/system/"
+      - "/user/"
+      - "/auth/"
+      - "/excel/"
+    ROLE_OPERATOR:
+      - "/ship/"
+      - "/ship-user/"
+      - "/operation/"
+      - "/file/"
+      - "/statistics/"
+      - "/user/"
+      - "/auth/"
+    ROLE_VIEWER:
+      - "/statistics/"
+      - "/ship/"
+      - "/user/"
+      - "/auth/"
+
+minio:
+  endpoint: http://127.0.0.1:9000
+  accessKey: minioadmin
+  secretKey: minioadmin
+  bucket: portal-ship-data
