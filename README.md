@@ -45,7 +45,8 @@
 
 | 技术 | 版本 | 用途 |
 |------|------|------|
-| Spring Boot | 3.3.7 | 主框架 |
+| Spring Boot | 3.3.7 | 主框架 |<img width="1280" height="679" alt="屏幕截图 2026-05-26 164303" src="https://github.com/user-attachments/assets/27d91ba4-dd18-47d0-8370-ad64c25d11b2" />
+
 | MyBatis-Plus | 3.5.9 | ORM / 分页 / 批量操作 |
 | MySQL | 8.0 | 关系型数据库 |
 | Druid | 1.2.18 | 数据库连接池 |
@@ -77,40 +78,19 @@
 
 ---
 
-## 3. 项目架构
+## 3. 项目界面预览
+<img width="1280" height="679" alt="屏幕截图 2026-05-26 164303" src="https://github.com/user-attachments/assets/faa42b89-fed1-4222-a70e-7940d0b07e82" />
+**系统首页：**
+这是智慧港口船舶信息管理系统的主界面，左侧整合了港口运营全维度数据看板，包含天气信息、港口核心数据、海侧作业数据与装卸动态四大模块，直观展示在港船只数量、泊位利用率、岸桥作业效率、装卸总量等关键指标，实现港口运行状态的实时监控与可视化呈现。
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                    前端 (Vue 3 + Element Plus)            │
-│   Login → Welcome → Dashboard / ShipManage / UserManage │
-│   Axios ↔ /api/*  (Vite Proxy 转发)                     │
-└──────────────────────┬──────────────────────────────────┘
-                       │ HTTP (JSON)
-┌──────────────────────▼──────────────────────────────────┐
-│              后端 (Spring Boot 3.3.7 :8082)               │
-│                                                          │
-│  ┌──────────┐  ┌──────────┐  ┌────────────────────┐     │
-│  │ Controller│→│ Service  │→│ Mapper (MyBatis-Plus)│    │
-│  └──────────┘  └──────────┘  └────────┬───────────┘     │
-│       ↑                                │                 │
-│  LoginInterceptor (JWT + RBAC)         │                 │
-│       ↑                                │                 │
-│  ┌──────────┐  ┌──────────┐  ┌───────▼──────┐          │
-│  │  Redis   │  │  MinIO   │  │   MySQL 8.0  │          │
-│  │(Token/   │  │(File     │  │  (Druid 连接池)│         │
-│  │ 验证码)  │  │ Storage) │  └──────────────┘          │
-│  └──────────┘  └──────────┘                             │
-└─────────────────────────────────────────────────────────┘
-```
+<img width="1280" height="681" alt="屏幕截图 2026-05-26 164337" src="https://github.com/user-attachments/assets/d396ebd1-294d-48d8-a72b-4ee0ca377463" />
+**登录系统界面：**
+提供管理员与普通用户两种角色的登录入口，支持邮箱+密码的身份校验，内置账号注册与返回首页功能。不同角色登录后将获得对应权限的系统操作界面，实现基于角色的访问控制。
 
-**分层说明**：
-- **Controller 层**：接收 HTTP 请求，参数校验，调用 Service
-- **Service 层**：业务逻辑实现，事务管理
-- **Mapper 层**：MyBatis-Plus BaseMapper，零 XML 配置
-- **Interceptor**：JWT 验证 + URI 前缀 RBAC 鉴权
-- **Config**：线程池、MinIO、CORS、Redis、MyBatis-Plus 分页插件
+<img width="1280" height="681" alt="屏幕截图 2026-05-26 164451" src="https://github.com/user-attachments/assets/dcd972f8-c430-4189-95df-50c5eeea7bad" />
+**数据总览界面：**
+系统核心的运营监控看板，直观展示港口关键运营指标，包括船舶总数、在港船舶数、作业中船舶数、今日作业数等核心数据。同时提供月度船舶到港趋势、船舶类型分布等可视化图表（开发中），并通过作业效率TOP10榜单，实时呈现船舶与岸桥的作业效率排名，辅助港口运营决策。
 
----
 
 ## 4. 核心功能模块
 
@@ -206,291 +186,13 @@ CompletableFuture.runAsync() ──→ 自定义线程池 excelImportExecutor
                               MyBatis-Plus saveBatch(batch, 1000)
                               (1000 条/条 SQL 批量写入)
 ```
-
-**关键参数**：
-- 导入线程池：4 核心 / 8 最大 / 有界队列 20000 / CallerRunsPolicy 背压
-- 缓冲批次：5000 行 / 批，子批次 1000 条/SQL
-- 进度追踪：`ConcurrentHashMap<String, ImportProgressVO>` + `AtomicInteger`
-- 前端轮询：`GET /excel/progress/{taskId}` 实时显示进度
-
-**性能数据**（100 万行测试）：
-
-| 指标 | 数值 |
-|------|------|
-| 导入耗时 | ~40s |
-| 写入速度 | ~25,000 行/秒 |
-| 内存峰值 | < 500MB |
-| OOM | 否 |
-
-### 5.3 导出方案
-
-```
-┌─────────────┐         ┌─────────────┐
-│ 主线程       │         │ DB 查询线程  │
-│ (写入 Excel) │  page1  │ (分页查询)   │
-│             │◄────────│             │
-│ 写入 page1  │         │ 查 page2    │──→ CompletableFuture
-│             │  page2  │             │
-│ 写入 page2  │◄────────│ 查 page3    │──→ CompletableFuture
-│             │  page3  │             │
-│ 写入 page3  │◄────────│ 查 page4    │
-│    ...      │         │    ...      │
-└─────────────┘         └─────────────┘
-      │
-      ▼
-EasyExcel ExcelWriter (流式写临时文件，自动刷盘)
-      │
-      ▼
-   D:/tmp/ship_export_{taskId}.xlsx
-```
-
-**关键参数**：
-- 导出线程池：2 核心 / 4 最大 / 有界队列 5000 / CallerRunsPolicy
-- 分页大小：10,000 行/页
-- 滑动窗口：始终预取 1 页（最多 2 页 = 20,000 行在内存）
-- 异步生成 + 轮询进度 + 下载接口
-
-**性能数据**（100 万行测试）：
-
-| 指标 | 数值 |
-|------|------|
-| 导出耗时 | ~75s |
-| 导出速度 | ~13,000 行/秒 |
-| 内存峰值 | < 200MB |
-| 输出文件大小 | ~120MB |
-
-### 5.4 线程池隔离设计
-
-```
-excelImportExecutor (导入)          excelExportExecutor (导出)
-┌────────────────────────┐        ┌────────────────────────┐
-│ core=4, max=8          │        │ core=2, max=4          │
-│ queue=LinkedBlocking   │        │ queue=LinkedBlocking   │
-│       Queue(20000)     │        │       Queue(5000)      │
-│ CallerRunsPolicy       │        │ CallerRunsPolicy       │
-└────────────────────────┘        └────────────────────────┘
-         ↑                                 ↑
-    批量 INSERT                      分页 SELECT
-```
-
-两个线程池**物理隔离**，导入任务不会阻塞导出任务。`CallerRunsPolicy` 保证队列满载时由调用线程执行，实现天然背压。
+### 5.3 实现效果
+<img width="278" height="131" alt="屏幕截图 2026-05-26 180248" src="https://github.com/user-attachments/assets/13257853-0ab0-4533-8cc3-ad6408e7756d" />
 
 ---
 
-## 6. 环境准备
 
-### 必需软件
-
-| 软件 | 版本要求 | 说明 |
-|------|----------|------|
-| JDK | 17+ | Java 开发环境 |
-| Maven | 3.8+ | 后端构建 |
-| MySQL | 8.0+ | 数据库 |
-| Redis | 6.0+ | 缓存服务（可选，也可用内置缓存） |
-| MinIO | 最新版 | 文件存储（可选） |
-| Node.js | 18+ | 前端运行环境 |
-
-### Windows 环境配置
-
-#### 1. JDK 17
-
-```powershell
-# 下载安装后验证
-java -version
-# 输出: openjdk version "17.0.x" ...
-```
-
-#### 2. Maven
-
-```powershell
-# 下载解压后配置环境变量 MAVEN_HOME，然后验证
-mvn -version
-# 输出: Apache Maven 3.9.x ...
-```
-
-#### 3. MySQL 8.0
-
-```powershell
-# 安装后创建数据库
-mysql -u root -p
-
-CREATE DATABASE IF NOT EXISTS portalship_db
-  DEFAULT CHARACTER SET utf8mb4
-  COLLATE utf8mb4_unicode_ci;
-```
-
-#### 4. Redis（Windows）
-
-使用 [Memurai](https://www.memurai.com/) 或 WSL 安装，默认端口 6379。
-
-#### 5. MinIO（可选，文件上传功能需要）
-
-```powershell
-# 下载 minio.exe，命令行启动
-minio.exe server C:\minio-data --console-address :9001
-# 访问 http://localhost:9001，默认账号 minioadmin / minioadmin
-```
-
-#### 6. Node.js 18+
-
-```powershell
-node -v
-npm -v
-```
-
----
-
-## 7. 部署与运行
-
-### 7.1 后端启动
-
-```powershell
-# 1. 进入后端目录
-cd C:\Users\Lenovo\Desktop\port-ship\portal-ship-server
-
-# 2. 修改数据库连接配置（如需要）
-#    编辑 src\main\resources\application.yml
-#    修改 spring.datasource.url / username / password
-
-# 3. 初始化数据库表
-#    执行 src\main\resources\db\schema.sql（在 MySQL 客户端中运行）
-
-# 4. 编译并启动
-mvn clean compile spring-boot:start
-
-# 或者 IDE 中直接运行 PortalShipServerApplication.main()
-```
-
-后端启动后访问：`http://localhost:8082`
-
-### 7.2 前端启动
-
-```powershell
-# 1. 进入前端目录
-cd C:\Users\Lenovo\Desktop\port-ship\portal-ship-client
-
-# 2. 安装依赖
-npm install
-
-# 3. 启动开发服务器
-npm run dev
-
-# 访问 http://localhost:5173
-```
-
-### 7.3 验证登录
-
-| 账号 | 密码 | 角色 |
-|------|------|------|
-| `admin@portalship.com` | `123456` | 管理员 |
-| — | — | 需自行注册普通用户 |
-
-### 7.4 生成测试数据（可选）
-
-```powershell
-# 生成 10 万条模拟船舶数据 Excel
-# IDE 中运行 util/ShipDataGenerator.main()
-# 输出文件：D:/test/ship_10w.xlsx
-
-# 导入到数据库
-# IDE 中运行 util/ImportShipDataRunner.main()
-```
-
----
-
-## 8. 数据库表说明
-
-| 表名 | 说明 | 关键字段 |
-|------|------|----------|
-| `tb_user` | 用户表 | username, password(MD5), role, email, status |
-| `tb_ship_info` | 船舶信息表 | ship_name, nationality, imo_no, status, arrive_time, leave_time |
-| `tb_ship_operation` | 作业数据表 | ship_id, quay_crane_no, work_efficiency, total_containers |
-| `tb_file_info` | 文件信息表 | relate_id, relate_type, file_path, file_type |
-| `tb_system_log` | 系统日志表 | user_id, operation, method, params, ip |
-| `tb_port_data` | 港口数据表 | port_name, total_berths, today_throughput |
-| `tb_weather` | 天气数据表 | temperature, wind_speed, wave_height, visibility |
-| `tb_work_data` | 作业统计表 | work_date, total_ships, efficiency_rate |
-| `ships` | 船舶表(兼容) | ship_name, cargo_type, destination, status |
-
-完整建表语句见：`src/main/resources/db/schema.sql`
-
----
-
-## 9. API 接口概览
-
-### 认证模块 (`/auth`)
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| POST | `/auth/login` | 邮箱+密码登录 |
-| POST | `/auth/register` | 邮箱注册 |
-| GET | `/auth/getUserInfo` | 获取当前用户信息 |
-| GET | `/auth/sendVerificationCode?email=` | 发送验证码 |
-| PATCH | `/auth/updatePassword` | 修改密码 |
-| POST | `/auth/logout` | 登出 |
-
-### 船舶管理 (`/ship`)
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| POST | `/ship/addShip` | 新增船舶 |
-| PUT | `/ship/updateShip` | 编辑船舶 |
-| DELETE | `/ship/deleteShip/{id}` | 删除船舶 |
-| GET | `/ship/getShipDetail/{id}` | 船舶详情 |
-| POST | `/ship/getAllShips` | 分页列表+筛选 |
-| PATCH | `/ship/updateShipStatus/{id}/{status}` | 状态更新 |
-
-### 作业管理 (`/operation`)
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| POST | `/operation/addOperation` | 新增作业 |
-| PUT | `/operation/updateOperation` | 编辑作业 |
-| DELETE | `/operation/deleteOperation/{id}` | 删除作业 |
-| POST | `/operation/getAllOperations` | 分页列表 |
-
-### Excel 导入导出 (`/excel`)
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| POST | `/excel/import` | 上传 Excel 导入 |
-| POST | `/excel/export` | 提交导出任务 |
-| GET | `/excel/download/{taskId}` | 下载导出文件 |
-| GET | `/excel/progress/{taskId}` | 查询进度 |
-
-### 统计 (`/statistics`)
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/statistics/getDashboard` | 仪表盘数据 |
-| GET | `/statistics/getEfficiencyRank?limit=10` | 效率排名 |
-
-### 文件管理 (`/file`)
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| POST | `/file/upload` | 上传文件 |
-| GET | `/file/getFiles` | 查询文件 |
-| DELETE | `/file/deleteFile/{id}` | 删除文件 |
-
----
-
-## 10. 项目截图
-
-> 以下为截图位置预留，请部署运行后补充实际截图。
-
-| 页面 | 说明 | 截图 |
-|------|------|------|
-| 登录页 | 暗色主题，角色选择（管理员/普通用户） | ![login](./screenshots/login.png) |
-| 数据总览 | 统计卡片 + 图表 + 效率排名 | ![dashboard](./screenshots/dashboard.png) |
-| 船舶管理 | 表格分页 + 增删改查 + Excel 导入导出 | ![ship](./screenshots/ship.png) |
-| 作业管理 | 岸桥作业记录 | ![operation](./screenshots/operation.png) |
-| 用户管理 | 角色/状态变更 | ![user](./screenshots/user.png) |
-| Excel 导入 | 文件上传 + 进度条轮询 | ![import](./screenshots/import.png) |
-
----
-
-## 11. 总结与收获
+## 6. 总结与收获
 
 ### 技术收获
 
@@ -503,8 +205,6 @@ npm run dev
 ### 工程能力
 
 - 从 0 到 1 搭建 Spring Boot 3.x + Vue 3 前后端分离项目
-- 独立设计数据库 Schema，处理表前缀、字段映射、索引优化
-- 解决了前后端角色格式不一致（`admin` vs `ROLE_ADMIN`）的兼容问题
 - 实现了异步任务进度追踪 + 定时清理机制，避免了内存泄漏
 
 ---
